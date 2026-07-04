@@ -416,7 +416,7 @@ for step in range(max_steps):
     optimizer.zero_grad()
     with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
         logits, loss = model(x, y)
-        loss.backward()
+    loss.backward()
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     lr = get_lr(step)
     for param_group in optimizer.param_groups:
