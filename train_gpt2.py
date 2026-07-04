@@ -353,7 +353,11 @@ enc = tiktoken.get_encoding("gpt2")
 # T = 64  # sequence length
 
 # For 1.2.2
-B = 16
+# B = 16
+# T = 1024
+
+# For 1.2.4
+B = 32
 T = 1024
 
 train_loader = DataLoaderLite(
