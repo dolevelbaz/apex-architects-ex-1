@@ -367,6 +367,7 @@ torch.set_float32_matmul_precision("high")
 model = GPT(GPTConfig(vocab_size=50304))
 # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
 model.to(device)
+model = torch.compile(model)  # For 1.2.3
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -375,7 +376,9 @@ warmup_steps = 715
 # For 1.2.1
 # max_steps = 100
 # For 1.2.2
-max_steps = 500
+# max_steps = 500
+# For 1.2.3
+max_steps = 1000
 
 
 def get_lr(it):
