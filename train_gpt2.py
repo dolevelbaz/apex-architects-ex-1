@@ -3,6 +3,7 @@ import math
 import time
 import inspect
 from dataclasses import dataclass
+from hf_checkpoint import save_and_upload_checkpoint
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -357,7 +358,11 @@ enc = tiktoken.get_encoding("gpt2")
 # T = 1024
 
 # For 1.2.4
-B = 32
+# B = 32
+# T = 1024
+
+# For 1.3.1
+B = 64
 T = 1024
 
 train_loader = DataLoaderLite(
@@ -374,6 +379,10 @@ model = GPT(GPTConfig(vocab_size=50304))
 # model = GPT.from_pretrained("gpt2") # or init from OpenAI GPT-2
 model.to(device)
 model = torch.compile(model)  # For 1.2.3
+if ddp:
+    model = DDP(model, device_ids=[ddp_local_rank])
+raw_model = model.module if ddp else model
+
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -384,7 +393,9 @@ warmup_steps = 715
 # For 1.2.2
 # max_steps = 500
 # For 1.2.3
-max_steps = 1000
+# max_steps = 1000
+# For 1.3.1
+max_steps = 5000
 
 
 def get_lr(it):
@@ -404,7 +415,7 @@ def get_lr(it):
 
 
 # optimize!
-optimizer = model.configure_optimizers(
+optimizer = raw_model.configure_optimizers(
     weight_decay=0.1, learning_rate=max_lr, device_type=device_type
 )
 
@@ -426,6 +437,9 @@ for step in range(max_steps):
     with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
         logits, loss = model(x, y)
     loss.backward()
+    loss_val = loss.detach()
+    if ddp:
+        dist.all_reduce(loss_val, op=dist.ReduceOp.AVG)
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     lr = get_lr(step)
     for param_group in optimizer.param_groups:
@@ -443,10 +457,14 @@ for step in range(max_steps):
     tokens_per_sec = tokens_processed / dt
     if master_process:
         print(
-            f"step {step:5d} | loss: {loss.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}"
+            f"step {step:5d} | loss: {loss_val.item():.6f} | lr {lr:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}"
         )
         with open(log_file, "a") as f:
-            f.write(f"{step} train {loss.item():.6f}\n")
+            f.write(f"{step} train {loss_val.item():.6f}\n")
+
+        # checkpoint to HF
+        save_and_upload_checkpoint(raw_model, step, loss_val.item(), "gpt2_checkpoints")
+
 
 if ddp:
     destroy_process_group()
