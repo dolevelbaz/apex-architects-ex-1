@@ -462,8 +462,11 @@ for step in range(max_steps):
         with open(log_file, "a") as f:
             f.write(f"{step} train {loss_val.item():.6f}\n")
 
-        # checkpoint to HF
-        save_and_upload_checkpoint(raw_model, step, loss_val.item(), "gpt2_checkpoints")
+        # checkpoint to HF every 1000 steps
+        if (step + 1) % 1000 == 0 or last_step:
+            save_and_upload_checkpoint(
+                raw_model, step, loss_val.item(), "gpt2_checkpoints"
+            )
 
 
 if ddp:

@@ -5,7 +5,7 @@ REPO_URL=https://github.com/dolevelbaz/apex-architects-ex-1.git
 REPO_NAME=apex-architects-ex-1
 
 HF_TOKEN=hf_...
-HF_REPO_ID=dolevelb/apex-gpt2
+HF_REPO_ID=dolevelb/apex-gpt2-run
 
 set +x
 
