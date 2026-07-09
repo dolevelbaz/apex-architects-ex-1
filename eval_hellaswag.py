@@ -17,6 +17,7 @@ we cannot import from it. If you changed the architecture for the race (1.3.4),
 adapt the classes here so your checkpoint loads -- but do NOT change the eval
 protocol (generation settings, HellaSwag rendering, val-loss constants).
 """
+
 import argparse
 import math
 import os
@@ -33,8 +34,8 @@ from hellaswag import iterate_examples, render_example
 # -----------------------------------------------------------------------------
 # model (mirrors train_gpt2.py)
 
-class CausalSelfAttention(nn.Module):
 
+class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
@@ -55,19 +56,19 @@ class CausalSelfAttention(nn.Module):
         y = self.c_proj(y)
         return y
 
-class MLP(nn.Module):
 
+class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
-        self.gelu = nn.GELU(approximate='tanh')
+        self.gelu = nn.GELU(approximate="tanh")
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
 
     def forward(self, x):
         return self.c_proj(self.gelu(self.c_fc(x)))
 
-class Block(nn.Module):
 
+class Block(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.ln_1 = nn.LayerNorm(config.n_embd)
@@ -80,6 +81,7 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
+
 @dataclass
 class GPTConfig:
     block_size: int = 1024
@@ -88,17 +90,19 @@ class GPTConfig:
     n_head: int = 12
     n_embd: int = 768
 
-class GPT(nn.Module):
 
+class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.transformer = nn.ModuleDict(dict(
-            wte=nn.Embedding(config.vocab_size, config.n_embd),
-            wpe=nn.Embedding(config.block_size, config.n_embd),
-            h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            ln_f=nn.LayerNorm(config.n_embd),
-        ))
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte=nn.Embedding(config.vocab_size, config.n_embd),
+                wpe=nn.Embedding(config.block_size, config.n_embd),
+                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                ln_f=nn.LayerNorm(config.n_embd),
+            )
+        )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight
 
@@ -116,15 +120,19 @@ class GPT(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
+
 # -----------------------------------------------------------------------------
+
 
 def load_model(args, device):
     if args.checkpoint:
         ckpt_path = args.checkpoint
     else:
         from huggingface_hub import hf_hub_download
+
         ckpt_path = hf_hub_download(
-            repo_id=args.hf_repo, filename=args.hf_file,
+            repo_id=args.hf_repo,
+            filename=args.hf_file,
             token=os.environ.get("HF_TOKEN"),
         )
     print(f"loading checkpoint from {ckpt_path}")
@@ -143,14 +151,22 @@ def load_model(args, device):
     model.to(device)
     model.eval()
     step, vl = checkpoint.get("step"), checkpoint.get("val_loss")
-    print(f"loaded model from step {step}"
-          + (f", train-time val_loss {vl:.4f}" if vl is not None else ""))
+    print(
+        f"loaded model from step {step}"
+        + (f", train-time val_loss {vl:.4f}" if vl is not None else "")
+    )
     return model
 
 
 @torch.no_grad()
-def generate(model, device, prompt="Hello, I'm a language model,",
-             num_samples=5, max_length=32, seed=42):
+def generate(
+    model,
+    device,
+    prompt="Hello, I'm a language model,",
+    num_samples=5,
+    max_length=32,
+    seed=42,
+):
     enc = tiktoken.get_encoding("gpt2")
     tokens = torch.tensor(enc.encode(prompt), dtype=torch.long)
     xgen = tokens.unsqueeze(0).repeat(num_samples, 1).to(device)
@@ -177,7 +193,8 @@ def get_most_likely_row(tokens, mask, logits):
     shift_tokens = tokens[..., 1:].contiguous()
     shift_losses = F.cross_entropy(
         shift_logits.view(-1, shift_logits.size(-1)),
-        shift_tokens.view(-1), reduction="none",
+        shift_tokens.view(-1),
+        reduction="none",
     ).view(tokens.size(0), -1)
     shift_mask = mask[..., 1:].contiguous()
     masked_losses = shift_losses * shift_mask
@@ -192,22 +209,29 @@ def evaluate_hellaswag(model, device, device_type, limit=None):
     for example in iterate_examples("val"):
         _, tokens, mask, label = render_example(example)
         tokens, mask = tokens.to(device), mask.to(device)
-        with torch.autocast(device_type=device_type, dtype=torch.bfloat16,
-                            enabled=(device_type == "cuda")):
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=(device_type == "cuda"),
+        ):
             logits, _ = model(tokens)
         pred, pred_norm = get_most_likely_row(tokens, mask, logits)
         num_total += 1
         num_correct += int(pred == label)
         num_correct_norm += int(pred_norm == label)
         if num_total % 500 == 0:
-            print(f"{num_total} acc: {num_correct/num_total:.4f} "
-                  f"acc_norm: {num_correct_norm/num_total:.4f}")
+            print(
+                f"{num_total} acc: {num_correct/num_total:.4f} "
+                f"acc_norm: {num_correct_norm/num_total:.4f}"
+            )
         if limit is not None and num_total >= limit:
             break
-    print(f"\nHellaSwag ({num_total} examples): "
-          f"acc: {num_correct/num_total:.4f} "
-          f"acc_norm: {num_correct_norm/num_total:.4f} "
-          f"(chance: 0.25, GPT-2 124M release: 0.2955)")
+    print(
+        f"\nHellaSwag ({num_total} examples): "
+        f"acc: {num_correct/num_total:.4f} "
+        f"acc_norm: {num_correct_norm/num_total:.4f} "
+        f"(chance: 0.25, GPT-2 124M release: 0.2955)"
+    )
 
 
 @torch.no_grad()
@@ -225,8 +249,11 @@ def evaluate_val_loss(model, device, device_type, data_root):
         buf = tokens[i * B * T : (i + 1) * B * T + 1]
         x = buf[:-1].view(B, T).to(device)
         y = buf[1:].view(B, T).to(device)
-        with torch.autocast(device_type=device_type, dtype=torch.bfloat16,
-                            enabled=(device_type == "cuda")):
+        with torch.autocast(
+            device_type=device_type,
+            dtype=torch.bfloat16,
+            enabled=(device_type == "cuda"),
+        ):
             _, loss = model(x, y)
         losses.append(loss.item())
     val_loss = sum(losses) / len(losses)
@@ -238,18 +265,32 @@ def main():
     parser = argparse.ArgumentParser()
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("--checkpoint", type=str, help="path to a local .pt checkpoint")
-    src.add_argument("--hf-repo", type=str, help="HuggingFace repo id, e.g. user/gpt2-run")
-    parser.add_argument("--hf-file", type=str, required=True,
-                        help="filename inside the HF repo")
+    src.add_argument(
+        "--hf-repo", type=str, help="HuggingFace repo id, e.g. user/gpt2-run"
+    )
+    parser.add_argument(
+        "--hf-file",
+        type=str,
+        help="filename inside the HF repo (required with --hf-repo)",
+    )
     parser.add_argument("--num-samples", type=int, default=5)
     parser.add_argument("--max-length", type=int, default=32)
-    parser.add_argument("--hellaswag-limit", type=int, default=None,
-                        help="evaluate only the first N examples (quick check)")
+    parser.add_argument(
+        "--hellaswag-limit",
+        type=int,
+        default=None,
+        help="evaluate only the first N examples (quick check)",
+    )
     parser.add_argument("--skip-hellaswag", action="store_true")
-    parser.add_argument("--val-loss", action="store_true",
-                        help="also compute the standardized FineWeb val loss")
+    parser.add_argument(
+        "--val-loss",
+        action="store_true",
+        help="also compute the standardized FineWeb val loss",
+    )
     parser.add_argument("--data-root", type=str, default="/mnt/data/edu_fineweb10B")
     args = parser.parse_args()
+    if args.hf_repo and not args.hf_file:
+        parser.error("--hf-file is required when using --hf-repo")
 
     device = "cpu"
     if torch.cuda.is_available():

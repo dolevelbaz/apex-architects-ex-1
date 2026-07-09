@@ -1,0 +1,14 @@
+[project]
+name = "apex-architects-ex-1"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "tiktoken",
+    "modal",
+    "datasets",
+    "transformers",
+    "tqdm",
+    "numpy",
+    "requests",
+    "torch",
+]
